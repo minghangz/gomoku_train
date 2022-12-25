@@ -15,14 +15,15 @@ from collections import defaultdict, deque
 from game_board import Board,Game
 from mcts_pure import MCTSPlayer as MCTS_Pure
 from mcts_alphaZero import MCTSPlayer
-from policy_value_net_tensorlayer import PolicyValueNet
+# from policy_value_net_tensorlayer import PolicyValueNet
+from policy_value_net import PolicyValueNet
 
 class TrainPipeline():
-    def __init__(self, init_model=None,transfer_model=None):
+    def __init__(self, init_model=None, transfer_model=None, board_width=11, board_height=11):
         self.resnet_block = 19  # num of block structures in resnet
         # params of the board and the game
-        self.board_width = 11
-        self.board_height = 11
+        self.board_width = board_width
+        self.board_height = board_height
         self.n_in_row = 5
         self.board = Board(width=self.board_width,
                            height=self.board_height,
@@ -42,10 +43,10 @@ class TrainPipeline():
         # num of simulations used for the pure mcts, which is used as
         # the opponent to evaluate the trained policy
         self.pure_mcts_playout_num = 200
-        if (init_model is not None) and os.path.exists(init_model+'.index'):
+        if (init_model is not None) and os.path.exists(init_model):
             # start training from an initial policy-value net
             self.policy_value_net = PolicyValueNet(self.board_width,self.board_height,block=self.resnet_block,init_model=init_model,cuda=True)
-        elif (transfer_model is not None) and os.path.exists(transfer_model+'.index'):
+        elif (transfer_model is not None) and os.path.exists(transfer_model):
             # start training from a pre-trained policy-value net
             self.policy_value_net = PolicyValueNet(self.board_width,self.board_height,block=self.resnet_block,transfer_model=transfer_model,cuda=True)
         else:
@@ -258,7 +259,7 @@ class TrainPipeline():
             print('\n\rquit')
 
 if __name__ == '__main__':
-    training_pipeline = TrainPipeline(init_model='model/best_policy.model',transfer_model=None)
-    # training_pipeline = TrainPipeline(init_model=None, transfer_model='transfer_model/best_policy.model')
+    # training_pipeline = TrainPipeline(init_model='model/best_policy.model',transfer_model=None)
+    training_pipeline = TrainPipeline(init_model=None, transfer_model='model_11_11_8923_scratch/best_policy.model', board_height=15, board_width=15)
     # training_pipeline = TrainPipeline()
     training_pipeline.run()

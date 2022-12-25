@@ -14,7 +14,8 @@ from collections import defaultdict, deque
 from game_board import Board,Game
 from mcts_pure import MCTSPlayer as MCTS_Pure
 from mcts_alphaZero import MCTSPlayer
-from policy_value_net_tensorlayer import  PolicyValueNet
+# from policy_value_net_tensorlayer import  PolicyValueNet
+from policy_value_net import PolicyValueNet
 
 # import sys
 # sys.stdout.flush()
@@ -27,12 +28,12 @@ comm = MPI.COMM_WORLD
 rank = comm.Get_rank() # processing ID
 
 class TrainPipeline():
-    def __init__(self, init_model=None,transfer_model=None):
+    def __init__(self, init_model=None, transfer_model=None, board_size=11):
         self.game_count = 0 # count total game have played
         self.resnet_block = 19 # num of block structures in resnet
         # params of the board and the game
-        self.board_width = 11
-        self.board_height = 11
+        self.board_width = board_size
+        self.board_height = board_size
         self.n_in_row = 5
         self.board = Board(width=self.board_width,
                            height=self.board_height,
@@ -64,23 +65,32 @@ class TrainPipeline():
         # be careful to set your GPU using depends on GPUs' and CPUs' memory
         if rank in {0,1,2}:
             cuda = True
-        elif rank in range(10,30):
+        elif rank in range(3,13):
             cuda = True
             os.environ["CUDA_DEVICE_ORDER"] = "PCI_BUS_ID"
             os.environ["CUDA_VISIBLE_DEVICES"] = "1"
+        elif rank in range(13,23):
+            cuda = True
+            os.environ["CUDA_DEVICE_ORDER"] = "PCI_BUS_ID"
+            os.environ["CUDA_VISIBLE_DEVICES"] = "2"
+        elif rank in range(23,33):
+            cuda = True
+            os.environ["CUDA_DEVICE_ORDER"] = "PCI_BUS_ID"
+            os.environ["CUDA_VISIBLE_DEVICES"] = "3"
         else:
             cuda = False
 
         # cuda = True
-        if (init_model is not None) and os.path.exists(init_model+'.index'):
+        if (init_model is not None) and os.path.exists(init_model):
             # start training from an initial policy-value net
             self.policy_value_net = PolicyValueNet(self.board_width,self.board_height,block=self.resnet_block,init_model=init_model,cuda=cuda)
-        elif (transfer_model is not None) and os.path.exists(transfer_model+'.index'):
+        elif (transfer_model is not None) and os.path.exists(transfer_model):
             # start training from a pre-trained policy-value net
             self.policy_value_net = PolicyValueNet(self.board_width,self.board_height,block=self.resnet_block,transfer_model=transfer_model,cuda=cuda)
         else:
             # start training from a new policy-value net
             self.policy_value_net = PolicyValueNet(self.board_width,self.board_height,block=self.resnet_block,cuda=cuda)
+        self.oppo_net = PolicyValueNet(self.board_width,self.board_height,block=self.resnet_block,cuda=cuda)
 
         self.mcts_player = MCTSPlayer(policy_value_function=self.policy_value_net.policy_value_fn_random,
                                        action_fc=self.policy_value_net.action_fc_test,
@@ -146,7 +156,7 @@ class TrainPipeline():
         #play_data: [(state, mcts_prob, winner_z), ..., ...]
         # train an epoch
 
-        tmp_buffer = np.array(self.data_buffer)
+        tmp_buffer = np.array(self.data_buffer, dtype=object)
         np.random.shuffle(tmp_buffer)
         steps = len(tmp_buffer)//self.batch_size
         if print_out:
@@ -213,11 +223,11 @@ class TrainPipeline():
                                          n_playout=400,
                                          is_selfplay=False)
         if self_evaluate:
-            self.policy_value_net.load_numpy(self.policy_value_net.network_oppo_all_params)
+            self.oppo_net.load_numpy(None)
 
-            mcts_player_oppo = MCTSPlayer(policy_value_function=self.policy_value_net.policy_value_fn_random,
-                                          action_fc=self.policy_value_net.action_fc_test_oppo,
-                                          evaluation_fc=self.policy_value_net.evaluation_fc2_test_oppo,
+            mcts_player_oppo = MCTSPlayer(policy_value_function=self.oppo_net.policy_value_fn_random,
+                                          action_fc=self.oppo_net.action_fc_test,
+                                          evaluation_fc=self.oppo_net.evaluation_fc2_test,
                                           c_puct=self.c_puct,
                                           n_playout=400,
                                           is_selfplay=False)
@@ -312,7 +322,7 @@ class TrainPipeline():
                 # print('begin!!!!!!!!!!!!!!!!!!!!!!!!!!!!!batch{}'.format(i),)
                 if rank not in {0,1,2}:
                     #　self-play to collect data
-                    if os.path.exists('model/best_policy.model.index'):
+                    if os.path.exists('model/best_policy.model'):
                         try:
                             # try to load current best model
                             retore_model_start_time = time.time()
@@ -342,7 +352,7 @@ class TrainPipeline():
                     # it's very useful if program break off for some reason
                     # we can load the data and continue to train
                     save_data_satrt_time = time.time()
-                    np.save('kifu_new/rank_'+str(rank)+'game_'+str(num)+'.npy',np.array(self.data_buffer_tmp))
+                    np.save('kifu_new/rank_'+str(rank)+'game_'+str(num)+'.npy',np.array(self.data_buffer_tmp, dtype=object))
                     save_data_time += time.time()-save_data_satrt_time
 
                     if rank == 3:
@@ -374,7 +384,7 @@ class TrainPipeline():
                         try:
                             # load data
                             # try to move file from kifu_train to kifu_old, if is under written now, just pass
-                            data = np.load('kifu_train/'+file)
+                            data = np.load('kifu_train/'+file, allow_pickle=True)
                             self.data_buffer.extend(data.tolist())
                             self.mymovefile('kifu_train/'+file,'kifu_old/'+file)
                             self.game_count+=1
@@ -407,7 +417,7 @@ class TrainPipeline():
 
                 if rank ==1:
                     # play with last best model and update it to collect data if current model is better
-                    if os.path.exists('tmp/best_policy.model.index'):
+                    if os.path.exists('tmp/best_policy.model'):
                         try:
                             # load current model
                             # if the model are under written, wait for some seconds and reload it
@@ -429,6 +439,8 @@ class TrainPipeline():
                         # if no current trained model to evaluate,
                         # save its own parameters and evaluate with itself
                         self.policy_value_net.save_numpy(self.policy_value_net.network_all_params)
+                        if not os.path.exists('model/best_policy.model'):
+                            self.policy_value_net.save_model('model/best_policy.model')
 
                     # evaluate current model
                     win_ratio = self.policy_evaluate(n_games=10,num=num,self_evaluate=1)
@@ -442,7 +454,7 @@ class TrainPipeline():
 
                 if rank ==2:
                     # play with pure MCTS only for monitoring the progress of training
-                    if os.path.exists('model/best_policy.model.index'):
+                    if os.path.exists('model/best_policy.model'):
                         try:
                             # load current model
                             # if the model are under written, wait for some seconds and reload it
@@ -475,6 +487,6 @@ class TrainPipeline():
 
 if __name__ == '__main__':
     # training_pipeline = TrainPipeline(init_model='model/best_policy.model',transfer_model=None)
-    # training_pipeline = TrainPipeline(init_model=None, transfer_model='transfer_model/best_policy.model')
-    training_pipeline = TrainPipeline()
+    training_pipeline = TrainPipeline(init_model=None, transfer_model='model_11_11_8923_scratch/best_policy.model', board_size=15)
+    # training_pipeline = TrainPipeline()
     training_pipeline.run()
