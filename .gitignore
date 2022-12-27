@@ -4,3 +4,5 @@ kifu_train
 kifu_old
 tmp
 *.ipynb
+gomocup
+*.pt

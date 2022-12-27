@@ -78,7 +78,10 @@ class TrainPipeline():
             os.environ["CUDA_DEVICE_ORDER"] = "PCI_BUS_ID"
             os.environ["CUDA_VISIBLE_DEVICES"] = "3"
         else:
-            cuda = False
+            # cuda = False
+            cuda = True
+            os.environ["CUDA_DEVICE_ORDER"] = "PCI_BUS_ID"
+            os.environ["CUDA_VISIBLE_DEVICES"] = "4"
 
         # cuda = True
         if (init_model is not None) and os.path.exists(init_model):
@@ -439,8 +442,8 @@ class TrainPipeline():
                         # if no current trained model to evaluate,
                         # save its own parameters and evaluate with itself
                         self.policy_value_net.save_numpy(self.policy_value_net.network_all_params)
-                        if not os.path.exists('model/best_policy.model'):
-                            self.policy_value_net.save_model('model/best_policy.model')
+                        # if not os.path.exists('model/best_policy.model'):
+                            # self.policy_value_net.save_model('model/best_policy.model')
 
                     # evaluate current model
                     win_ratio = self.policy_evaluate(n_games=10,num=num,self_evaluate=1)
@@ -486,7 +489,7 @@ class TrainPipeline():
             print('\n\rquit')
 
 if __name__ == '__main__':
-    # training_pipeline = TrainPipeline(init_model='model/best_policy.model',transfer_model=None)
-    training_pipeline = TrainPipeline(init_model=None, transfer_model='model_11_11_8923_scratch/best_policy.model', board_size=15)
+    training_pipeline = TrainPipeline(init_model='model_15_15_human/best_policy.model', transfer_model=None, board_size=15)
+    # training_pipeline = TrainPipeline(init_model=None, transfer_model='model_11_11_8923_scratch/best_policy.model', board_size=15)
     # training_pipeline = TrainPipeline()
     training_pipeline.run()
